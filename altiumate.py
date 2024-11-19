@@ -1,21 +1,50 @@
 import argparse
-import logging as log
+import logging
 import pathlib as pl
 import subprocess
+import sys
 import winreg as wr
+from collections.abc import Sequence
 
 altiumate_dir = pl.Path(__file__).parent
 
-log.basicConfig(
-    level=log.NOTSET,
-    format="%(asctime)s | %(levelname)s: %(message)s",
-    handlers=[
-        log.FileHandler((pl.Path.cwd() / "altiumate.log"), mode="w"),
-        log.StreamHandler(),
-    ],
-)
-log.getLogger().handlers[0].setLevel(log.DEBUG)
-log.getLogger().handlers[1].setLevel(log.WARNING)
+logger = logging.getLogger("altiumate")
+logger.setLevel(logging.DEBUG)
+
+
+class Formatter(logging.Formatter):
+    grey = "\x1b[38;20m"
+    yellow = "\x1b[33;20m"
+    turquoise = "\033[36;20m"
+    red = "\x1b[31;20m"
+    bold_red = "\x1b[31;1m"
+    reset = "\x1b[0m"
+    fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+    FORMATS = {
+        logging.DEBUG: turquoise,
+        logging.INFO: grey,
+        logging.WARNING: yellow,
+        logging.ERROR: red,
+        logging.CRITICAL: bold_red,
+    }
+
+    def __fmt(self, lvl):
+        return self.FORMATS.get(lvl, self.grey) + self.fmt + self.reset
+
+    def format(self, record):
+        self._style._fmt = self.__fmt(record.levelno)
+        return super().format(record)
+
+
+f_log = logging.FileHandler((altiumate_dir / ".altiumate.log"), mode="w")
+f_log.setFormatter(logging.Formatter(Formatter.fmt))
+logger.addHandler(f_log)
+
+o_log = logging.StreamHandler()
+o_log.setLevel(logging.WARN)
+o_log.setFormatter(Formatter())
+logger.addHandler(o_log)
 
 
 def read_altium_path():
@@ -36,10 +65,10 @@ def get_altium_path():
             install_path = wr.QueryValueEx(subkey, "ProgramsInstallPath")[0]
             return pl.Path(install_path) / "X2.exe"
     except FileNotFoundError as e:
-        log.critical("AD registry key not found.")
+        logger.critical("AD registry key not found.")
         raise fail from e
     except WindowsError as e:
-        log.critical("Registry access failed! {e}")
+        logger.critical("Registry access failed! {e}")
         raise fail from e
 
 
@@ -63,42 +92,139 @@ repos:
 
 
 def render_constants(**params: str):
-    with open(altiumate_dir / "inputs.pas", "w") as f_dst:
-        data = "\n".join(f"\t{k} = '{v}';" for k, v in params.items())
-        f_dst.write(f"const\n{data}\n")
+    procedure = params.pop("call_procedure", "test_altiumate")
+    with open(altiumate_dir / "altiumate.pas", "w") as f_dst:
+        data = "\n".join(f"  {k} = '{v}';" for k, v in params.items())
+        f_dst.write(
+            f"const\n{data}\n\nProcedure RunFromAltiumate;\nBegin\n  {procedure};\nEnd;\n"
+        )
 
 
-def handle_pre_commit(args, parser):
+def _register_pre_commit(parser: argparse.ArgumentParser):
+    ex_group: argparse._MutuallyExclusiveGroup = parser.add_mutually_exclusive_group()
+    ex_group.add_argument(
+        "--sample-config",
+        help="Prints the contents of a sample pre-commit configuration file",
+        action="store_true",
+        dest="print_config",
+    )
+    ex_group.add_argument(
+        "--add-config",
+        help="Adds pre-commit config to the directory",
+        type=pl.Path,
+        metavar="DIR",
+        dest="add_config_file",
+        nargs="?",
+        const=pl.Path.cwd(),
+    )
+    ex_group.add_argument(
+        "--add-linked-config",
+        help="Adds a symlink to altiumate sample config file to the directory",
+        dest="add_linked_config",
+        metavar="DIR",
+        type=pl.Path,
+        nargs="?",
+        const=pl.Path.cwd(),
+    )
+    ex_group.add_argument(
+        "--install",
+        help="Installs pre-commit hooks",
+        action="store_true",
+        dest="install",
+    )
+    parser.add_argument("--force", help="Force the operation", action="store_true")
+
+
+def _handle_pre_commit(args: argparse.Namespace, parser: argparse.ArgumentParser):
     if args.print_config:
         return print(sample_config())
-    if args.add_config_file:
-        with open(args.add_config_file / ".pre-commit-config.yaml", "w") as f:
-            f.write(sample_config())
-        return log.info(f"Pre-commit config file created in {args.add_config_file}")
-    if args.add_linked_config:
-        conf = altiumate_dir / ".linked-config.yaml"
-        if not conf.exists():
-            with open(conf, "w") as f:
+    elif args.add_config_file or args.add_linked_config:
+        dir_to_add: pl.Path = args.add_config_file or args.add_linked_config
+        out = dir_to_add / ".pre-commit-config.yaml"
+        if not dir_to_add.is_dir():
+            return logger.error(f"Provided path {dir_to_add} is not a directory.")
+        if out.exists() and not args.force:
+            return logger.error(
+                f"Config file {out} already exists. Use --force to overwrite."
+            )
+
+        if args.add_config_file:
+            with open(args.add_config_file / ".pre-commit-config.yaml", "w") as f:
                 f.write(sample_config())
-        out: pl.Path = args.add_linked_config / ".pre-commit-config.yaml"
-        out.unlink(True)
-        return out.hardlink_to(conf)
-    if args.install:
+        else:
+            conf = altiumate_dir / ".linked-config.yaml"
+            if not conf.exists():
+                with open(conf, "w") as f:
+                    f.write(sample_config())
+            out.unlink(True)
+            return out.hardlink_to(conf)
+
+        return logger.info(f"Pre-commit config file created in {dir}")
+    elif args.install:
         proc: subprocess.CompletedProcess = subprocess.run(
             "pre-commit install",
             capture_output=True,
             text=True,
         )
         print(proc.stdout.rstrip())
-        return proc.stderr and log.error(proc.stderr.rstrip())
+        return proc.stderr and logger.error(proc.stderr.rstrip())
+    else:
+        parser.print_usage()
 
-    parser.print_help()
+
+def _register_run(parser: argparse.ArgumentParser):
+    parser.add_argument("--procedure", help="Procedure to call in AD", dest="procedure")
+    parser.add_argument(
+        "file",
+        type=pl.Path,
+        nargs="*",
+        help="Files to run in Altium Designer. Available in `passed_files` as a comma-separated list.",
+    )
 
 
-def main():
+def _handle_run(args: argparse.Namespace, parser: argparse.ArgumentParser):
+    # args.file: Sequence[pl.Path]
+    if args.procedure or len(args.file) > 0:
+        logger.info(f"Changed files: {args.file}")
+        f_ext = {f.suffix for f in args.file}
+        logger.debug(f"Modified extensions: {f_ext}")
+
+        altium = read_altium_path()
+
+        render_constants(
+            passed_files=",".join(str(f.absolute()) for f in args.file),
+            call_procedure=args.procedure or "test_altiumate",
+        )
+
+        cmd = f"{altium} -RScriptingSystem:RunScript(ProjectName={(altiumate_dir/'precommit.PrjScr').absolute()}|ProcName=altiumate.pas>RunFromAltiumate)"
+        proc: subprocess.CompletedProcess = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+        )
+    else:
+        parser.error(
+            "Provide a procedure name or files to pass to test_altiumate script."
+        )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    argv = argv if argv is not None else sys.argv[1:]
+
     parser = argparse.ArgumentParser(
         description="Altiumate - Altium Designer automation interface"
     )
+
+    def add_verbose(parser):
+        parser.add_argument(
+            "-v",
+            "--verbose",
+            help="Increase verbosity",
+            action="store_true",
+            dest="verbose",
+        )
+
+    add_verbose(parser)
     parser.add_argument(
         "--altium-path",
         help="Prints the path to Altium Designer executable",
@@ -106,70 +232,43 @@ def main():
         dest="altium_path",
     )
     subparsers = parser.add_subparsers(dest="cmd")
-    pre = subparsers.add_parser("pre-commit", help="Pre-commit handling commands")
-    pre.add_argument(
-        "--sample-config",
-        help="Prints the contents of a sample pre-commit configuration file",
-        action="store_true",
-        dest="print_config",
-    )
-    pre.add_argument(
-        "--add-config",
-        help="Adds pre-commit config to the directory",
-        type=pl.Path,
-        metavar="DIR",
-        dest="add_config_file",
-        nargs="?",
-    )
-    pre.add_argument(
-        "--add-linked-config",
-        help="Adds a symlink to altiumate sample config file to the directory",
-        dest="add_linked_config",
-        metavar="DIR",
-        type=pl.Path,
-        nargs="?",
-    )
-    pre.add_argument(
-        "--install",
-        help="Installs pre-commit hooks",
-        action="store_true",
-        dest="install",
-    )
-    run = subparsers.add_parser("run", help="Run scripts in Altium Designer")
-    run.add_argument("file", type=pl.Path, nargs="+")
-    args = parser.parse_args()
-    if args.altium_path:
-        return print(get_altium_path())
-    elif args.cmd == "pre-commit":
-        return handle_pre_commit(args, pre)
-    elif args.cmd == "run":
-        pass
-    else:
+
+    entries = {}
+
+    def subparser(name, subparsers: argparse._SubParsersAction, **kwargs):
+        sp = subparsers.add_parser(name, **kwargs)
+        entries[name] = sp
+        # add_verbose(sp)
+        globals()[f"_register_{name.replace('-', '_')}"](sp)
+        return sp
+
+    subparser("pre-commit", subparsers, help="Pre-commit handling commands")
+    subparser("run", subparsers, help="Run scripts in Altium Designer")
+
+    if len(argv) == 0:
         return parser.print_help()
-    log.info(f"Changed files: {args.file}")
-    f_ext = {f.suffix for f in args.file}
-    log.info(f"Modified extensions: {f_ext}")
+    args = parser.parse_args(argv)
 
-    altium = read_altium_path()
+    if args.verbose:
+        o_log.setLevel(logging.DEBUG)
 
-    render_constants(
-        document_path=next(
-            x for x in args.file if x.suffix in (".SchDoc", ".PcbDoc")
-        ).absolute()
-    )
+    try:
+        if args.altium_path:
+            return print(get_altium_path())
 
-    cmd = f"{altium} -RScriptingSystem:RunScript(ProjectName={(altiumate_dir/'precommit.PrjScr').absolute()}|ProcName=generate_outputs.pas>RunFromAltiumate)"
-    proc: subprocess.CompletedProcess = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-    )
+        elif args.cmd in entries:
+            return globals()[f"_handle_{args.cmd.replace('-', '_')}"](
+                args, entries[args.cmd]
+            )
+        else:
+            raise NotImplementedError(
+                f"Command {args.cmd} not implemented.",
+            )
+
+    except Exception as e:
+        logger.critical(str(e))
+        exit(1)
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        log.exception(e)
-        exit(1)
-    exit(1)
+    exit(main())
