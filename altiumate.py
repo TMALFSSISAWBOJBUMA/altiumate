@@ -89,6 +89,14 @@ repos:
         language: system
         files: \\.(PrjPcb|SchDoc|PcbDoc)$
         description: "Generates documentation for the project"
+      - id: update-readme
+        name: Update README.md
+        entry: py {pl.Path(__file__).as_posix()} run readme
+        language: system
+        files: \\.(PrjPcb|md)$
+        pass_filenames: false
+        description: "Updates the README.md file with requested project parameters"
+      
 """
 
 
@@ -224,13 +232,6 @@ def update_readme(readme: pl.Path, parameters: dict[str, str]):
 
 
 def _register_run(parser: argparse.ArgumentParser):
-    parser.add_argument("--procedure", help="Procedure to call in AD", dest="procedure")
-    parser.add_argument(
-        "file",
-        type=pl.Path,
-        nargs="*",
-        help="Files to run in Altium Designer. Available in `passed_files` as a comma-separated list.",
-    )
     ridmi = parser.add_subparsers(dest="subcmd").add_parser(
         "readme", help="Handles updating the readme file with Altium project parameters"
     )
@@ -247,6 +248,13 @@ def _register_run(parser: argparse.ArgumentParser):
         dest="readme",
         type=pl.Path,
         default=pl.Path("README.md"),
+    )
+    parser.add_argument("--procedure", help="Procedure to call in AD", dest="procedure")
+    parser.add_argument(
+        "file",
+        type=pl.Path,
+        nargs="*",
+        help="Files to run in Altium Designer. Available in `passed_files` as a comma-separated list.",
     )
 
 
