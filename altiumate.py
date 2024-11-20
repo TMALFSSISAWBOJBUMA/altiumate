@@ -1,6 +1,7 @@
 import argparse
 import logging
 import pathlib as pl
+import re
 import subprocess
 import sys
 import winreg as wr
@@ -172,6 +173,56 @@ def _handle_pre_commit(args: argparse.Namespace, parser: argparse.ArgumentParser
         parser.print_usage()
 
 
+def parse_prjpcb_params(prjpcb: pl.Path) -> dict[str, str]:
+    # reading = None
+    # store = {}
+    out = {}
+    with open(prjpcb) as f:
+
+        def f_iter(f):
+            for line in f:
+                yield line.splitlines()[0]
+
+        f_i = f_iter(f)
+        for line in f_i:
+            # if reading is None:
+            #     if '[' and line.endswith(']'):
+            #         print(repr(line))
+            #         reading = line.strip('[]')
+            #         if reading.startswith('ProjectVariant'):
+            #             reading = 'ProjectVariant'
+            #             store = {'Description': None, 'ParameterCount': None}
+            #         break
+            # else:
+            #     if not line and reading != 'ProjectVariant' or all(store.values()):
+            #         reading = None
+            #     if reading == 'Design':
+            #         out.update([line.split('=', 1)])
+
+            if "[Parameter" in line:  # Check for parameter section
+                print(repr(line))
+                name = next(f_i).split("=", 1)[1]
+                out[name] = next(f_i).split("=", 1)[1]
+    return out
+
+
+def update_readme(readme: pl.Path, parameters: dict[str, str]):
+    with open(readme) as f:
+        data = f.read()
+        insert_pattern = r"\[\]\((.*?)\)(.*?)\[\]\(/\)"
+
+        def replacer(match):
+            key = match.group(1)
+            if key not in parameters:
+                raise KeyError(f"Parameter {key} not found in the project.")
+            return f"[]({key}){parameters[key]}[](/)"
+
+        data = re.sub(insert_pattern, replacer, data)
+    with open(readme, "w") as f:
+        f.write(data)
+    return 0
+
+
 def _register_run(parser: argparse.ArgumentParser):
     parser.add_argument("--procedure", help="Procedure to call in AD", dest="procedure")
     parser.add_argument(
@@ -180,10 +231,29 @@ def _register_run(parser: argparse.ArgumentParser):
         nargs="*",
         help="Files to run in Altium Designer. Available in `passed_files` as a comma-separated list.",
     )
+    ridmi = parser.add_subparsers(dest="subcmd").add_parser(
+        "readme", help="Handles updating the readme file with Altium project parameters"
+    )
+    ridmi.add_argument(
+        "--project",
+        help="Altium .PrjPcb file with parameters",
+        dest="project_path",
+        type=pl.Path,
+        default=next(pl.Path.cwd().glob("*.PrjPcb"), None),
+    )
+    ridmi.add_argument(
+        "--readme_file",
+        help="README.md",
+        dest="readme",
+        type=pl.Path,
+        default=pl.Path("README.md"),
+    )
 
 
 def _handle_run(args: argparse.Namespace, parser: argparse.ArgumentParser):
     # args.file: Sequence[pl.Path]
+    if args.subcmd == "readme":
+        return update_readme(args.readme, parse_prjpcb_params(args.project_path))
     if args.procedure or len(args.file) > 0:
         logger.info(f"Changed files: {args.file}")
         f_ext = {f.suffix for f in args.file}
