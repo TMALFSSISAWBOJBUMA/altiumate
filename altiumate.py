@@ -14,6 +14,8 @@ logger.setLevel(logging.DEBUG)
 
 
 class Formatter(logging.Formatter):
+    """Custom formatter for logging messages with ANSI color codes."""
+
     grey = "\x1b[38;20m"
     yellow = "\x1b[33;20m"
     turquoise = "\033[36;20m"
@@ -38,7 +40,7 @@ class Formatter(logging.Formatter):
         return super().format(record)
 
 
-f_log = logging.FileHandler((altiumate_dir / ".altiumate.log"), mode="w")
+f_log = logging.FileHandler((altiumate_dir / ".altiumate.log"), mode="a")
 f_log.setFormatter(logging.Formatter(Formatter.fmt))
 logger.addHandler(f_log)
 
@@ -48,7 +50,21 @@ o_log.setFormatter(Formatter())
 logger.addHandler(o_log)
 
 
+def get_subparser(
+    parser: argparse.ArgumentParser, name: str
+) -> argparse.ArgumentParser:
+    return parser._subparsers._group_actions[0]._name_parser_map[name]
+
+
 def read_altium_path():
+    """Reads the path to Altium Designer executable from .altium_exe file.
+
+    Raises:
+        FileNotFoundError: If the file is missing
+
+    Returns:
+        pl.Path: path to AD executable read from file
+    """
     try:
         with open(altiumate_dir / ".altium_exe") as f:
             altium_exe = f.read().strip()
@@ -57,7 +73,16 @@ def read_altium_path():
     return pl.Path(altium_exe)
 
 
-def get_altium_path():
+def get_altium_path():  # TODO: Add version requirement input
+    """Returns the path to Altium Designer executable from Windows registry.
+
+    Raises:
+        FileNotFoundError: If the registry key is missing
+        WindowsError: If the registry access fails
+
+    Returns:
+        pl.Path: Path to Altium Designer executable
+    """
     fail = FileNotFoundError("Altium Designer is not installed on this computer.")
     try:
         with wr.OpenKey(
@@ -74,24 +99,28 @@ def get_altium_path():
 
 
 def sample_config() -> str:
+    """Returns a sample pre-commit configuration file for an Altium Designer PCB project."""
+    self = pl.Path(__file__).as_posix()
     return f"""fail_fast: true
 repos:
   - repo: local
     hooks:
       - id: find-altium
         name: Find AD installation
-        entry: {(altiumate_dir/"find_altium.bat").as_posix()}
+        entry: '{self}' --altium-path
+        log_file: '{(altiumate_dir/".altium_exe").as_posix()}'
         language: system
+        pass_filenames: false
         always_run: true
       - id: generate-docs
         name: Generate Documentation
-        entry: py {pl.Path(__file__).as_posix()} run
+        entry: py '{self}' run
         language: system
         files: \\.(PrjPcb|SchDoc|PcbDoc)$
         description: "Generates documentation for the project"
       - id: update-readme
         name: Update README.md
-        entry: py {pl.Path(__file__).as_posix()} run readme
+        entry: py '{self}' readme
         language: system
         files: \\.(PrjPcb|md)$
         pass_filenames: false
@@ -101,6 +130,11 @@ repos:
 
 
 def render_constants(**params: str):
+    """Renders the altiumate.pas file with the provided parameters.
+
+    params: dict[str, str]: Parameters to render in the altiumate.pas file as constants.
+    └─> call_procedure: str: Internals of the function that will be called. ';' is appended after this text. Defaults to "test_altiumate"
+    """
     procedure = params.pop("call_procedure", "test_altiumate")
     with open(altiumate_dir / "altiumate.pas", "w") as f_dst:
         data = "\n".join(f"  {k} = '{v}';" for k, v in params.items())
@@ -181,7 +215,57 @@ def _handle_pre_commit(args: argparse.Namespace, parser: argparse.ArgumentParser
         parser.print_usage()
 
 
-def parse_prjpcb_params(prjpcb: pl.Path) -> dict[str, str]:
+def _register_run(parser: argparse.ArgumentParser):
+    parser.add_argument("--procedure", help="Procedure to call in AD", dest="procedure")
+    parser.add_argument(
+        "file",
+        type=pl.Path,
+        nargs=argparse.ZERO_OR_MORE,
+        help="Files to run in Altium Designer. Available in `passed_files` as a comma-separated list.",
+    )
+
+
+def file_exists(f: pl.Path) -> pl.Path:
+    return f and f.exists() and f.is_file()
+
+
+def _handle_run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    if args.procedure or len(args.file) > 0:
+        logger.info(f"Changed files: {args.file}")
+        f_ext = {f.suffix for f in args.file}
+        logger.debug(f"Modified extensions: {f_ext}")
+
+        altium = read_altium_path()
+
+        render_constants(
+            passed_files=",".join(str(f.absolute()) for f in args.file),
+            call_procedure=args.procedure or "test_altiumate",
+        )
+
+        cmd = f"{altium} -RScriptingSystem:RunScript(ProjectName={(altiumate_dir/'precommit.PrjScr').absolute()}|ProcName=altiumate.pas>RunFromAltiumate)"
+        proc: subprocess.CompletedProcess = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+        )
+        return proc.returncode
+    else:
+        parser.error(
+            "Provide a procedure name or files to pass to test_altiumate script."
+        )
+
+
+def parse_prjpcb_params(
+    prjpcb: pl.Path,
+) -> dict[
+    str, str
+]:  # TODO: Move to state machine parsing, include project variants and system parameters
+    """Parses the parameters from an Altium Designer project file.
+
+    Returns:
+        dict[str, str]: A dictionary of parameters found in the project file
+    """
+    logger.info(f"Reading parameters from {prjpcb}")
     # reading = None
     # store = {}
     out = {}
@@ -208,82 +292,78 @@ def parse_prjpcb_params(prjpcb: pl.Path) -> dict[str, str]:
             #         out.update([line.split('=', 1)])
 
             if "[Parameter" in line:  # Check for parameter section
-                print(repr(line))
                 name = next(f_i).split("=", 1)[1]
                 out[name] = next(f_i).split("=", 1)[1]
+    logger.debug(f"Parameters: {out}")
     return out
 
 
-def update_readme(readme: pl.Path, parameters: dict[str, str]):
+def update_readme(
+    readme: pl.Path, parameters: dict[str, str], fail_on_missing=True
+) -> int:
+    """Updates the README.md file with the parameters from the Altium Designer project file.
+
+    File will be parsed for the following pattern:
+    \[\]\(\<project_parameter>)any previous text that will be replaced\[](/)
+
+    For example: \[\](ProjectName)ProjectName Parameter Value\[](/)
+
+    Parameters:
+        readme: pl.Path: Path to the README.md file
+        parameters: dict[str, str]: Parameters to insert into the README.md file
+        fail_on_missing: bool: Raise an error if a parameter is not found in the project file
+
+    Returns:
+        int: 0 if successful
+
+    """
+    inserted = 0
     with open(readme) as f:
         data = f.read()
         insert_pattern = r"\[\]\((.*?)\)(.*?)\[\]\(/\)"
 
         def replacer(match):
+            nonlocal inserted
             key = match.group(1)
             if key not in parameters:
-                raise KeyError(f"Parameter {key} not found in the project.")
+                if fail_on_missing:
+                    raise KeyError(f"Parameter {key} not found in the project.")
+                parameters[key] = key
+            else:
+                inserted += 1
             return f"[]({key}){parameters[key]}[](/)"
 
         data = re.sub(insert_pattern, replacer, data)
     with open(readme, "w") as f:
         f.write(data)
+    logger.info(f"Updated {readme} with {inserted} parameters.")
     return 0
 
 
-def _register_run(parser: argparse.ArgumentParser):
-    ridmi = parser.add_subparsers(dest="subcmd").add_parser(
-        "readme", help="Handles updating the readme file with Altium project parameters"
-    )
-    ridmi.add_argument(
-        "--project",
-        help="Altium .PrjPcb file with parameters",
-        dest="project_path",
+def _register_readme(parser: argparse.ArgumentParser):
+    parser.add_argument(
+        "prjpcb",
+        help="Altium .PrjPcb file with parameters, defaults to first found in cwd",
         type=pl.Path,
         default=next(pl.Path.cwd().glob("*.PrjPcb"), None),
+        nargs=argparse.OPTIONAL,
     )
-    ridmi.add_argument(
-        "--readme_file",
-        help="README.md",
-        dest="readme",
+    parser.add_argument(
+        "readme_md",
+        help="README.md to update, defaults to README.md in cwd",
         type=pl.Path,
         default=pl.Path("README.md"),
-    )
-    parser.add_argument("--procedure", help="Procedure to call in AD", dest="procedure")
-    parser.add_argument(
-        "file",
-        type=pl.Path,
-        nargs="*",
-        help="Files to run in Altium Designer. Available in `passed_files` as a comma-separated list.",
+        nargs=argparse.OPTIONAL,
     )
 
 
-def _handle_run(args: argparse.Namespace, parser: argparse.ArgumentParser):
-    # args.file: Sequence[pl.Path]
-    if args.subcmd == "readme":
-        return update_readme(args.readme, parse_prjpcb_params(args.project_path))
-    if args.procedure or len(args.file) > 0:
-        logger.info(f"Changed files: {args.file}")
-        f_ext = {f.suffix for f in args.file}
-        logger.debug(f"Modified extensions: {f_ext}")
-
-        altium = read_altium_path()
-
-        render_constants(
-            passed_files=",".join(str(f.absolute()) for f in args.file),
-            call_procedure=args.procedure or "test_altiumate",
-        )
-
-        cmd = f"{altium} -RScriptingSystem:RunScript(ProjectName={(altiumate_dir/'precommit.PrjScr').absolute()}|ProcName=altiumate.pas>RunFromAltiumate)"
-        proc: subprocess.CompletedProcess = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-        )
-    else:
-        parser.error(
-            "Provide a procedure name or files to pass to test_altiumate script."
-        )
+def _handle_readme(args: argparse.Namespace, parser: argparse.ArgumentParser):
+    file_exists(args.prjpcb) or parser.error("No project file found. Add -h for help.")
+    file_exists(args.readme_md) or parser.error(
+        "No README.md file found. Add -h for help."
+    )
+    params = parse_prjpcb_params(args.prjpcb)
+    return update_readme(args.readme_md, params)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -316,19 +396,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     def subparser(name, subparsers: argparse._SubParsersAction, **kwargs):
         sp = subparsers.add_parser(name, **kwargs)
         entries[name] = sp
-        # add_verbose(sp)
+        add_verbose(sp)
         globals()[f"_register_{name.replace('-', '_')}"](sp)
         return sp
 
     subparser("pre-commit", subparsers, help="Pre-commit handling commands")
     subparser("run", subparsers, help="Run scripts in Altium Designer")
+    subparser("readme", subparsers, help="Update README.md with AD project parameters")
 
     if len(argv) == 0:
         return parser.print_help()
     args = parser.parse_args(argv)
 
     if args.verbose:
-        o_log.setLevel(logging.DEBUG)
+        o_log.setLevel(logging.INFO)
 
     try:
         if args.altium_path:
@@ -345,8 +426,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     except Exception as e:
         logger.critical(str(e))
-        exit(1)
+        return 1
 
 
 if __name__ == "__main__":
-    exit(main())
+    raise SystemExit(main())
