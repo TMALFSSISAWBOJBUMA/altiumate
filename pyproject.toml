@@ -1,0 +1,37 @@
+[project]
+name = "altium-commit"
+version = "0.1.0"
+description = "Interface and helper tools for Altium Designer"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {file = "LICENSE"}
+authors = [{ name = "Jakub Piech", email = "piechjakub99@gmail.com" }]
+keywords = ["altium", "pre-commit", "interface", "tools"]
+dependencies = []
+
+classifiers = [
+  "Development Status :: 3 - Alpha",
+
+  "Environment :: Console",
+  
+  "Intended Audience :: Manufacturing",
+
+  "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+  "Topic :: Software Development :: Version Control :: Git",
+
+  "License :: OSI Approved :: MIT License",
+
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+]
+
+[project.urls]
+Repository = "https://github.com/TMALFSSISAWBOJBUMA/altiumate.git"
+Issues = "https://github.com/TMALFSSISAWBOJBUMA/altiumate/issues"
+
+[project.scripts]
+altiumate = "altiumate:main"
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"

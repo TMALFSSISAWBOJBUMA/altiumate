@@ -85,9 +85,10 @@ def get_altium_path():  # TODO: Add version requirement input
     """
     fail = FileNotFoundError("Altium Designer is not installed on this computer.")
     try:
-        with wr.OpenKey(
-            wr.HKEY_LOCAL_MACHINE, "SOFTWARE\\Altium\\Builds"
-        ) as key, wr.OpenKey(key, wr.EnumKey(key, 0)) as subkey:
+        with (
+            wr.OpenKey(wr.HKEY_LOCAL_MACHINE, "SOFTWARE\\Altium\\Builds") as key,
+            wr.OpenKey(key, wr.EnumKey(key, 0)) as subkey,
+        ):
             install_path = wr.QueryValueEx(subkey, "ProgramsInstallPath")[0]
             return pl.Path(install_path) / "X2.exe"
     except FileNotFoundError as e:
@@ -304,9 +305,9 @@ def update_readme(
     """Updates the README.md file with the parameters from the Altium Designer project file.
 
     File will be parsed for the following pattern:
-    \[\]\(\<project_parameter>)any previous text that will be replaced\[](/)
+    \\[\\]\\(\\<project_parameter>)any previous text that will be replaced\\[](/)
 
-    For example: \[\](ProjectName)ProjectName Parameter Value\[](/)
+    For example: \\[\\](ProjectName)ProjectName Parameter Value\\[](/)
 
     Parameters:
         readme: pl.Path: Path to the README.md file
