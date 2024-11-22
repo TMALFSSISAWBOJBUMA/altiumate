@@ -104,25 +104,24 @@ def sample_config() -> str:
     self = pl.Path(__file__).as_posix()
     return f"""fail_fast: true
 repos:
-  - repo: local
+  - repo: https://github.com/TMALFSSISAWBOJBUMA/altiumate.git
+    language: python
+    rev: v0.1.0
     hooks:
       - id: find-altium
         name: Find AD installation
-        entry: '{self}' --altium-path
-        log_file: '{(altiumate_dir/".altium_exe").as_posix()}'
-        language: system
+        entry: altiumate --altium-path
+        log_file: .altium_exe
         pass_filenames: false
         always_run: true
       - id: generate-docs
         name: Generate Documentation
-        entry: py '{self}' run
-        language: system
+        entry: altiumate run
         files: \\.(PrjPcb|SchDoc|PcbDoc)$
         description: "Generates documentation for the project"
       - id: update-readme
         name: Update README.md
-        entry: py '{self}' readme
-        language: system
+        entry: altiumate readme
         files: \\.(PrjPcb|md)$
         pass_filenames: false
         description: "Updates the README.md file with requested project parameters"
