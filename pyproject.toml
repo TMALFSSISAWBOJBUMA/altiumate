@@ -35,3 +35,6 @@ altiumate = "altiumate:main"
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
+
+[tool.pdm.build]
+include = ["precommit.PrjScr","generate_outputs.pas"]
