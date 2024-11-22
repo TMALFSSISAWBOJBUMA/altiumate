@@ -103,22 +103,15 @@ def sample_config() -> str:
     """Returns a sample pre-commit configuration file for an Altium Designer PCB project."""
     self = pl.Path(__file__).as_posix()
     return f"""fail_fast: true
+default_language_version:
+    python: python3.12
 repos:
   - repo: https://github.com/TMALFSSISAWBOJBUMA/altiumate.git
-    language: python
     rev: v0.1.0
     hooks:
       - id: find-altium
-        name: Find AD installation
-        entry: altiumate --altium-path
-        log_file: .altium_exe
-        pass_filenames: false
-        always_run: true
-      - id: generate-docs
-        name: Generate Documentation
-        entry: altiumate run
-        files: \\.(PrjPcb|SchDoc|PcbDoc)$
-        description: "Generates documentation for the project"
+      - id: altium-run
+        args: [--procedure, "ShowInfo('Hello from Altiumate!')"]
       - id: update-readme
         name: Update README.md
         entry: altiumate readme
@@ -235,7 +228,7 @@ def _handle_run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> in
         f_ext = {f.suffix for f in args.file}
         logger.debug(f"Modified extensions: {f_ext}")
 
-        altium = read_altium_path()
+        altium = get_altium_path()
 
         render_constants(
             passed_files=",".join(str(f.absolute()) for f in args.file),

@@ -3,17 +3,19 @@
   entry: altiumate --altium-path
   description: "Finds Altium Designer installations"
   pass_filenames: false
+  always_run: true
+  verbose: true
   language: python
 - id: altium-run
   name: Run in AD
   entry: altiumate run
-  files: \\.(PrjPcb|SchDoc|PcbDoc)$
+  files: .(PrjPcb|SchDoc|PcbDoc)$
   description: "Runs a script in Altium Designer"
   language: python
 - id: update-readme
   name: Update README.md
   entry: altiumate readme
-  files: \\.(PrjPcb|md)$
+  files: .(PrjPcb|md)$
   pass_filenames: false
   description: "Updates the README.md file with requested project parameters"
   language: python
