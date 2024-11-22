@@ -101,8 +101,7 @@ def get_altium_path():  # TODO: Add version requirement input
 
 def sample_config() -> str:
     """Returns a sample pre-commit configuration file for an Altium Designer PCB project."""
-    self = pl.Path(__file__).as_posix()
-    return f"""fail_fast: true
+    return """fail_fast: true
 default_language_version:
     python: python3.12
 repos:
@@ -115,7 +114,7 @@ repos:
       - id: update-readme
         name: Update README.md
         entry: altiumate readme
-        files: \\.(PrjPcb|md)$
+        files: .(PrjPcb|md)$
         pass_filenames: false
         description: "Updates the README.md file with requested project parameters"
       
@@ -129,7 +128,7 @@ def render_constants(**params: str):
     └─> call_procedure: str: Internals of the function that will be called. ';' is appended after this text. Defaults to "test_altiumate"
     """
     procedure = params.pop("call_procedure", "test_altiumate")
-    with open(altiumate_dir / "altiumate.pas", "w") as f_dst:
+    with open(altiumate_dir / "AD_scripting" / "altiumate.pas", "w") as f_dst:
         data = "\n".join(f"  {k} = '{v}';" for k, v in params.items())
         f_dst.write(
             f"const\n{data}\n\nProcedure RunFromAltiumate;\nBegin\n  {procedure};\nEnd;\n"
@@ -235,7 +234,7 @@ def _handle_run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> in
             call_procedure=args.procedure or "test_altiumate",
         )
 
-        cmd = f"{altium} -RScriptingSystem:RunScript(ProjectName={(altiumate_dir/'precommit.PrjScr').absolute()}|ProcName=altiumate.pas>RunFromAltiumate)"
+        cmd = f"{altium} -RScriptingSystem:RunScript(ProjectName={(altiumate_dir / "AD_scripting" / 'precommit.PrjScr').absolute()}|ProcName=altiumate.pas>RunFromAltiumate)"
         proc: subprocess.CompletedProcess = subprocess.run(
             cmd,
             capture_output=True,

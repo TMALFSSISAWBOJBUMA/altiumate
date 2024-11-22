@@ -1,6 +1,4 @@
-History/
-__Previews/
-.*
 __pycache__/
 *.py[cod]
 *.egg-info/
+build/

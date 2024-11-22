@@ -33,8 +33,8 @@ Issues = "https://github.com/TMALFSSISAWBOJBUMA/altiumate/issues"
 altiumate = "altiumate:main"
 
 [build-system]
-requires = ["pdm-backend"]
-build-backend = "pdm.backend"
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
 
-[tool.pdm.build]
-include = ["precommit.PrjScr","generate_outputs.pas"]
+[tool.setuptools.package-data]
+"altiumate.AD_scripting" = ["*.pas", "*.PrjScr"]
