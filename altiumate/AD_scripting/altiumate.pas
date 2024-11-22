@@ -1,5 +1,5 @@
 const
-  passed_files = 'C:\Git\altiumate\ugabuga';
+  passed_files = '';
 
 Procedure RunFromAltiumate;
 Begin
