@@ -30,7 +30,7 @@ Repository = "https://github.com/TMALFSSISAWBOJBUMA/altiumate.git"
 Issues = "https://github.com/TMALFSSISAWBOJBUMA/altiumate/issues"
 
 [project.scripts]
-altiumate = "altiumate:main"
+altiumate = "altiumate.main:main"
 
 [build-system]
 requires = ["setuptools"]

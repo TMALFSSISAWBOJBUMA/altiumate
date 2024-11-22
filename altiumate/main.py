@@ -105,18 +105,13 @@ def sample_config() -> str:
 default_language_version:
     python: python3.12
 repos:
-  - repo: https://github.com/TMALFSSISAWBOJBUMA/altiumate.git
+  - repo: https://github.com/TMALFSSISAWBOJBUMA/altiumate
     rev: v0.1.0
     hooks:
       - id: find-altium
       - id: altium-run
         args: [--procedure, "ShowInfo('Hello from Altiumate!')"]
       - id: update-readme
-        name: Update README.md
-        entry: altiumate readme
-        files: .(PrjPcb|md)$
-        pass_filenames: false
-        description: "Updates the README.md file with requested project parameters"
       
 """
 
@@ -176,7 +171,7 @@ def _handle_pre_commit(args: argparse.Namespace, parser: argparse.ArgumentParser
     elif args.add_config_file or args.add_linked_config:
         dir_to_add: pl.Path = args.add_config_file or args.add_linked_config
         out = dir_to_add / ".pre-commit-config.yaml"
-        if not dir_to_add.is_dir():
+        if not dir_to_add.is_dir():  # TODO: add option to append to existing config
             return logger.error(f"Provided path {dir_to_add} is not a directory.")
         if out.exists() and not args.force:
             return logger.error(
