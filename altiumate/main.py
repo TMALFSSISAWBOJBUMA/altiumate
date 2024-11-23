@@ -86,34 +86,32 @@ def get_altium_path(version=None):
     fail = FileNotFoundError("Altium Designer is not installed on this computer.")
     if version == "any":
         version = None
+    installs = {}
     try:
         with wr.OpenKey(wr.HKEY_LOCAL_MACHINE, "SOFTWARE\\Altium\\Builds") as key:
-            installs = {}
             for i in range(wr.QueryInfoKey(key)[0]):
                 with wr.OpenKey(key, wr.EnumKey(key, i)) as subkey:
                     installs[wr.QueryValueEx(subkey, "Version")[0]] = pl.Path(
                         wr.QueryValueEx(subkey, "ProgramsInstallPath")[0], "X2.exe"
                     )
-            logger.info(f"Found Altium Designer installations: {installs}")
-            if version:
-                filtered = list(
-                    filter(lambda x: x.startswith(version), installs.keys())
-                )
-                if len(filtered) == 0:
-                    raise FileNotFoundError(f"Version '{version}' not found.")
-                elif len(filtered) > 1:
-                    raise FileNotFoundError(
-                        f"Multiple versions found for '{version}': {filtered}"
-                    )
-                return installs[filtered[0]]
-            for ver in installs:
-                return installs[ver]
     except FileNotFoundError as e:
         logger.critical("AD registry key not found.")
         raise fail from e
     except WindowsError as e:
         logger.critical("Registry access failed! {e}")
         raise fail from e
+    logger.info(f"Found Altium Designer installations: {installs}")
+    if version:
+        filtered = list(filter(lambda x: x.startswith(version), installs.keys()))
+        if len(filtered) == 0:
+            raise FileNotFoundError(f"Version '{version}' not found.")
+        elif len(filtered) > 1:
+            raise FileNotFoundError(
+                f"Multiple versions found for '{version}': {filtered}"
+            )
+        return installs[filtered[0]]
+    for ver in installs:
+        return installs[ver]
 
 
 def sample_config() -> str:
@@ -123,7 +121,7 @@ default_language_version:
     python: python3.12
 repos:
   - repo: https://github.com/TMALFSSISAWBOJBUMA/altiumate
-    rev: v0.1.1
+    rev: v0.1.2
     hooks:
       - id: find-altium
       - id: altium-run
