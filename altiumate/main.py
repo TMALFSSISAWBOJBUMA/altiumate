@@ -73,7 +73,7 @@ def read_altium_path():
     return pl.Path(altium_exe)
 
 
-def get_altium_path():  # TODO: Add version requirement input
+def get_altium_path(version=None):
     """Returns the path to Altium Designer executable from Windows registry.
 
     Raises:
@@ -84,13 +84,30 @@ def get_altium_path():  # TODO: Add version requirement input
         pl.Path: Path to Altium Designer executable
     """
     fail = FileNotFoundError("Altium Designer is not installed on this computer.")
+    if version == "any":
+        version = None
     try:
-        with (
-            wr.OpenKey(wr.HKEY_LOCAL_MACHINE, "SOFTWARE\\Altium\\Builds") as key,
-            wr.OpenKey(key, wr.EnumKey(key, 0)) as subkey,
-        ):
-            install_path = wr.QueryValueEx(subkey, "ProgramsInstallPath")[0]
-            return pl.Path(install_path) / "X2.exe"
+        with wr.OpenKey(wr.HKEY_LOCAL_MACHINE, "SOFTWARE\\Altium\\Builds") as key:
+            installs = {}
+            for i in range(wr.QueryInfoKey(key)[0]):
+                with wr.OpenKey(key, wr.EnumKey(key, i)) as subkey:
+                    installs[wr.QueryValueEx(subkey, "Version")[0]] = pl.Path(
+                        wr.QueryValueEx(subkey, "ProgramsInstallPath")[0], "X2.exe"
+                    )
+            logger.info(f"Found Altium Designer installations: {installs}")
+            if version:
+                filtered = list(
+                    filter(lambda x: x.startswith(version), installs.keys())
+                )
+                if len(filtered) == 0:
+                    raise FileNotFoundError(f"Version '{version}' not found.")
+                elif len(filtered) > 1:
+                    raise FileNotFoundError(
+                        f"Multiple versions found for '{version}': {filtered}"
+                    )
+                return installs[filtered[0]]
+            for ver in installs:
+                return installs[ver]
     except FileNotFoundError as e:
         logger.critical("AD registry key not found.")
         raise fail from e
@@ -106,7 +123,7 @@ default_language_version:
     python: python3.12
 repos:
   - repo: https://github.com/TMALFSSISAWBOJBUMA/altiumate
-    rev: v0.1.0
+    rev: v0.1.1
     hooks:
       - id: find-altium
       - id: altium-run
@@ -200,6 +217,7 @@ def _handle_pre_commit(args: argparse.Namespace, parser: argparse.ArgumentParser
         return proc.stderr and logger.error(proc.stderr.rstrip())
     else:
         parser.print_usage()
+        return 1
 
 
 def _register_run(parser: argparse.ArgumentParser):
@@ -370,11 +388,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
     add_verbose(parser)
-    parser.add_argument(
+    ad_grp = parser.add_argument_group("AD executable")
+    ad_grp.add_argument(
         "--altium-path",
-        help="Prints the path to Altium Designer executable",
-        action="store_true",
+        help="Prints the path to Altium Designer executable with specified \
+            version. If not specified, the first version found is returned.",
         dest="altium_path",
+        metavar="version",
+        nargs=argparse.OPTIONAL,
+        const="any",
     )
     subparsers = parser.add_subparsers(dest="cmd")
 
@@ -400,8 +422,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         if args.altium_path:
-            return print(get_altium_path())
-
+            print(get_altium_path(args.altium_path))
+            return 0
         elif args.cmd in entries:
             return globals()[f"_handle_{args.cmd.replace('-', '_')}"](
                 args, entries[args.cmd]
