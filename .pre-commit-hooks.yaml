@@ -9,7 +9,7 @@
 - id: altium-run
   name: Run in AD
   entry: altiumate run
-  files: .(PrjPcb|SchDoc|PcbDoc)$
+  files: .(PrjPcb|SchDoc|PcbDoc|OutJob)$
   description: "Runs a script in Altium Designer"
   language: python
 - id: update-readme

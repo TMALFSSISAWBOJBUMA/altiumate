@@ -7,7 +7,9 @@ requires-python = ">=3.12"
 license = {file = "LICENSE"}
 authors = [{ name = "Jakub Piech", email = "piechjakub99@gmail.com" }]
 keywords = ["altium", "pre-commit", "interface", "tools"]
-dependencies = []
+dependencies = [
+    "humanize>=4.11.0",
+]
 
 classifiers = [
   "Development Status :: 3 - Alpha",

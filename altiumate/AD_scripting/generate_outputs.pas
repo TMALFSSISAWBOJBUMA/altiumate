@@ -27,4 +27,5 @@ Procedure test_altiumate;
 Begin
   ShowInfo(ReplaceStr(passed_files, ',', #13#10),
     'Files passed to altiumate run');
+  return_code := 0;
 End;

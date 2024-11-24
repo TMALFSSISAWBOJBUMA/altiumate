@@ -1,13 +1,18 @@
 import argparse
 import logging
+import os
 import pathlib as pl
 import re
 import subprocess
 import sys
+import time
 import winreg as wr
 from collections.abc import Sequence
 
+from humanize import naturaldelta as human_time
+
 altiumate_dir = pl.Path(__file__).parent
+AD_return_file = altiumate_dir / "AD_out"
 
 logger = logging.getLogger("altiumate")
 logger.setLevel(logging.DEBUG)
@@ -137,11 +142,33 @@ def render_constants(**params: str):
     params: dict[str, str]: Parameters to render in the altiumate.pas file as constants.
     └─> call_procedure: str: Internals of the function that will be called. ';' is appended after this text. Defaults to "test_altiumate"
     """
+    AD_return_file.unlink(True)
     procedure = params.pop("call_procedure", "test_altiumate")
     with open(altiumate_dir / "AD_scripting" / "altiumate.pas", "w") as f_dst:
         data = "\n".join(f"  {k} = '{v}';" for k, v in params.items())
         f_dst.write(
-            f"const\n{data}\n\nProcedure RunFromAltiumate;\nBegin\n  {procedure};\nEnd;\n"
+            f"""const
+{data}
+
+Var
+  return_code: cardinal;
+
+
+Procedure RunFromAltiumate;
+Var
+  tmp_file: TextFile;
+Begin
+  return_code := 1;
+  AssignFile(tmp_file, '{AD_return_file.as_posix()}');
+  Try
+  {procedure};
+  Finally
+    ReWrite(tmp_file);
+    WriteLn(tmp_file, return_code);
+    CloseFile(tmp_file);
+  end;
+End;
+"""
         )
 
 
@@ -218,8 +245,20 @@ def _handle_pre_commit(args: argparse.Namespace, parser: argparse.ArgumentParser
         return 1
 
 
+DEFAULT_RUN_TIMEOUT = 60.0
+
+
 def _register_run(parser: argparse.ArgumentParser):
     parser.add_argument("--procedure", help="Procedure to call in AD", dest="procedure")
+    parser.add_argument(
+        "--altium-version", help="Uses specific version of AD", dest="AD_version"
+    )
+    parser.add_argument(
+        "--timeout",
+        help=f"Timeout for AD script runtime in seconds. Defaults to {human_time(DEFAULT_RUN_TIMEOUT)}",
+        dest="timeout",
+        default=DEFAULT_RUN_TIMEOUT,
+    )
     parser.add_argument(
         "file",
         type=pl.Path,
@@ -238,7 +277,7 @@ def _handle_run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> in
         f_ext = {f.suffix for f in args.file}
         logger.debug(f"Modified extensions: {f_ext}")
 
-        altium = get_altium_path()
+        altium = get_altium_path(args.AD_version)
 
         render_constants(
             passed_files=",".join(str(f.absolute()) for f in args.file),
@@ -246,12 +285,49 @@ def _handle_run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> in
         )
 
         cmd = f"{altium} -RScriptingSystem:RunScript(ProjectName={(altiumate_dir / "AD_scripting" / 'precommit.PrjScr').absolute()}|ProcName=altiumate.pas>RunFromAltiumate)"
+
+        try:
+            max_run_time = float(args.timeout)
+        except Exception:
+            logger.error(
+                f"Invalid timeout value '{args.timeout}', using default {human_time(DEFAULT_RUN_TIMEOUT)} "
+            )
+            max_run_time = DEFAULT_RUN_TIMEOUT
+        assert max_run_time > 3, "Timeout must be larger than 3 seconds"
+        assert max_run_time < 3600, "Timeout must be less than 1 hour"
+
+        proc_start = time.time()
         proc: subprocess.CompletedProcess = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
+            timeout=max_run_time,
         )
-        return proc.returncode
+        # if AD is already opened, the subprocess returns before the script has finished executing
+        # solution is creating a file containing exit code from inside AD and waiting for it to appear in altiumate
+
+        timeout = False
+        while not (
+            (  # file is created after ReWrite command in AD, wait a little to write to the file and close it
+                AD_return_file.exists()
+                and (time.time() - os.path.getmtime(AD_return_file)) > 0.1
+            )
+            or timeout
+        ):
+            timeout = (time.time() - proc_start) > max_run_time
+            time.sleep(0.3)
+        if timeout:
+            raise TimeoutError("AD took too long!")
+        logger.info(f"Task took {human_time(time.time() - proc_start)}")
+
+        with open(AD_return_file) as fp:
+            code = fp.readline()
+            try:
+                int(code)
+            except Exception:
+                logger.error(f"Invalid return code: {code}")
+                return 1
+            return int(code)
     else:
         parser.error(
             "Provide a procedure name or files to pass to test_altiumate script."
