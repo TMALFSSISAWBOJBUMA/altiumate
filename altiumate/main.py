@@ -19,7 +19,7 @@ logger.setLevel(logging.DEBUG)
 
 
 class Formatter(logging.Formatter):
-    """Custom formatter for logging messages with ANSI color codes."""
+    """Custom formatter for logging messages with ANSI color codes"""
 
     grey = "\x1b[38;20m"
     yellow = "\x1b[33;20m"
@@ -78,17 +78,21 @@ def read_altium_path():
     return pl.Path(altium_exe)
 
 
-def get_altium_path(version=None):
-    """Returns the path to Altium Designer executable from Windows registry.
+def get_altium_path(
+    version: str | None = None,
+):  # TODO: maybe add 'latest' as an option
+    """Returns the path to Altium Designer executable from Windows registry.    
+    If version is specified, executable will be selected using string matching, else \
+        the first instance found will be returned. 'any' can be used as a version placehoder.
 
     Raises:
-        FileNotFoundError: If the registry key is missing
+        FileNotFoundError: If the registry key or specified version of AD is missing
         WindowsError: If the registry access fails
 
     Returns:
         pl.Path: Path to Altium Designer executable
     """
-    fail = FileNotFoundError("Altium Designer is not installed on this computer.")
+    fail = FileNotFoundError("Altium Designer is not installed on this computer")
     if version == "any":
         version = None
     installs = {}
@@ -100,7 +104,7 @@ def get_altium_path(version=None):
                         wr.QueryValueEx(subkey, "ProgramsInstallPath")[0], "X2.exe"
                     )
     except FileNotFoundError as e:
-        logger.critical("AD registry key not found.")
+        logger.critical("AD registry key not found")
         raise fail from e
     except WindowsError as e:
         logger.critical("Registry access failed! {e}")
@@ -109,7 +113,7 @@ def get_altium_path(version=None):
     if version:
         filtered = list(filter(lambda x: x.startswith(version), installs.keys()))
         if len(filtered) == 0:
-            raise FileNotFoundError(f"Version '{version}' not found.")
+            raise FileNotFoundError(f"Version '{version}' not found")
         elif len(filtered) > 1:
             raise FileNotFoundError(
                 f"Multiple versions found for '{version}': {filtered}"
@@ -129,6 +133,7 @@ repos:
     rev: v0.1.2
     hooks:
       - id: find-altium
+        args: [--version, 24.9.1]
       - id: altium-run
         args: [--procedure, "ShowInfo('Hello from Altiumate!')"]
       - id: update-readme
@@ -182,20 +187,20 @@ def _register_pre_commit(parser: argparse.ArgumentParser):
     )
     ex_group.add_argument(
         "--add-config",
-        help="Adds pre-commit config to the directory",
+        help="Adds a .pre-commit-config.yaml file to the DIR directory",
         type=pl.Path,
         metavar="DIR",
         dest="add_config_file",
-        nargs="?",
+        nargs=argparse.OPTIONAL,
         const=pl.Path.cwd(),
     )
     ex_group.add_argument(
         "--add-linked-config",
-        help="Adds a symlink to altiumate sample config file to the directory",
+        help="Adds .pre-commit-config.yaml to the directory as a hard link to altiumate sample config file",
         dest="add_linked_config",
         metavar="DIR",
         type=pl.Path,
-        nargs="?",
+        nargs=argparse.OPTIONAL,
         const=pl.Path.cwd(),
     )
     ex_group.add_argument(
@@ -214,10 +219,10 @@ def _handle_pre_commit(args: argparse.Namespace, parser: argparse.ArgumentParser
         dir_to_add: pl.Path = args.add_config_file or args.add_linked_config
         out = dir_to_add / ".pre-commit-config.yaml"
         if not dir_to_add.is_dir():  # TODO: add option to append to existing config
-            return logger.error(f"Provided path {dir_to_add} is not a directory.")
+            return logger.error(f"Provided path {dir_to_add} is not a directory")
         if out.exists() and not args.force:
             return logger.error(
-                f"Config file {out} already exists. Use --force to overwrite."
+                f"Config file {out} already exists. Use --force to overwrite"
             )
 
         if args.add_config_file:
@@ -263,7 +268,7 @@ def _register_run(parser: argparse.ArgumentParser):
         "file",
         type=pl.Path,
         nargs=argparse.ZERO_OR_MORE,
-        help="Files to run in Altium Designer. Available in `passed_files` as a comma-separated list.",
+        help="Files to run in Altium Designer. Available in `passed_files` as a comma-separated list",
     )
 
 
@@ -330,7 +335,7 @@ def _handle_run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> in
             return int(code)
     else:
         parser.error(
-            "Provide a procedure name or files to pass to test_altiumate script."
+            "Provide a procedure name or files to pass to test_altiumate script"
         )
 
 
@@ -406,7 +411,7 @@ def update_readme(
             key = match.group(1)
             if key not in parameters:
                 if fail_on_missing:
-                    raise KeyError(f"Parameter {key} not found in the project.")
+                    raise KeyError(f"Parameter {key} not found in the project")
                 parameters[key] = key
             else:
                 inserted += 1
@@ -415,7 +420,7 @@ def update_readme(
         data = re.sub(insert_pattern, replacer, data)
     with open(readme, "w") as f:
         f.write(data)
-    logger.info(f"Updated {readme} with {inserted} parameters.")
+    logger.info(f"Updated {readme} with {inserted} parameters")
     return 0
 
 
@@ -437,9 +442,9 @@ def _register_readme(parser: argparse.ArgumentParser):
 
 
 def _handle_readme(args: argparse.Namespace, parser: argparse.ArgumentParser):
-    file_exists(args.prjpcb) or parser.error("No project file found. Add -h for help.")
+    file_exists(args.prjpcb) or parser.error("No project file found. Add -h for help")
     file_exists(args.readme_md) or parser.error(
-        "No README.md file found. Add -h for help."
+        "No README.md file found. Add -h for help"
     )
     params = parse_prjpcb_params(args.prjpcb)
     return update_readme(args.readme_md, params)
@@ -466,7 +471,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ad_grp.add_argument(
         "--altium-path",
         help="Prints the path to Altium Designer executable with specified \
-            version. If not specified, the first version found is returned.",
+            version. If not specified, the first version found is returned",
         dest="altium_path",
         metavar="version",
         nargs=argparse.OPTIONAL,
@@ -504,7 +509,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         else:
             raise NotImplementedError(
-                f"Command {args.cmd} not implemented.",
+                f"Command {args.cmd} not implemented",
             )
 
     except Exception as e:
