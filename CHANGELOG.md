@@ -1,3 +1,8 @@
+# v0.2.0
+
+- fixed bugs with execution and improved error handling
+- upgraded run command to allow for output job files execution 
+
 # v0.1.2
 
 - fixed error handling to use more verbose errors

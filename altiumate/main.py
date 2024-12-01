@@ -130,7 +130,7 @@ default_language_version:
     python: python3.12
 repos:
   - repo: https://github.com/TMALFSSISAWBOJBUMA/altiumate
-    rev: v0.1.2
+    rev: v0.2.0
     hooks:
       - id: find-altium
         args: [--version, 24.9.1]
