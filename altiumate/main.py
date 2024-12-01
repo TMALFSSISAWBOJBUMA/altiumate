@@ -214,7 +214,8 @@ def _register_pre_commit(parser: argparse.ArgumentParser):
 
 def _handle_pre_commit(args: argparse.Namespace, parser: argparse.ArgumentParser):
     if args.print_config:
-        return print(sample_config())
+        print(sample_config())
+        return 0
     elif args.add_config_file or args.add_linked_config:
         dir_to_add: pl.Path = args.add_config_file or args.add_linked_config
         out = dir_to_add / ".pre-commit-config.yaml"
@@ -454,7 +455,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
 
     parser = argparse.ArgumentParser(
-        description="Altiumate - Altium Designer automation interface"
+        prog="altiumate", description="Altiumate - Altium Designer automation interface"
     )
 
     def add_verbose(parser):
@@ -512,8 +513,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"Command {args.cmd} not implemented",
             )
 
+    except KeyboardInterrupt:
+        logger.error("Interrupted by user")
+        return 1
     except Exception as e:
         logger.critical(str(e))
+        logger.warning(
+            f'Check log file {(altiumate_dir / ".altiumate.log").absolute()} for more details'
+        )
         return 1
 
 
