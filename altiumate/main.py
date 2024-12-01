@@ -135,7 +135,7 @@ repos:
       - id: find-altium
         args: [--version, 24.9.1]
       - id: altium-run
-        args: [--procedure, "ShowInfo('Hello from Altiumate!')"]
+        args: [procedure, "test_altiumate"]
       - id: update-readme
       
 """
@@ -149,6 +149,9 @@ def render_constants(**params: str):
     """
     AD_return_file.unlink(True)
     procedure = params.pop("call_procedure", "test_altiumate")
+    terminate = (
+        params.pop("terminate", False) and "TerminateWithExitCode(return_code);" or ""
+    )
     with open(altiumate_dir / "AD_scripting" / "altiumate.pas", "w") as f_dst:
         data = "\n".join(f"  {k} = '{v}';" for k, v in params.items())
         f_dst.write(
@@ -156,8 +159,7 @@ def render_constants(**params: str):
 {data}
 
 Var
-  return_code: cardinal;
-
+  return_code: integer;
 
 Procedure RunFromAltiumate;
 Var
@@ -166,12 +168,13 @@ Begin
   return_code := 1;
   AssignFile(tmp_file, '{AD_return_file.as_posix()}');
   Try
-  {procedure};
+    {procedure};
   Finally
     ReWrite(tmp_file);
     WriteLn(tmp_file, return_code);
     CloseFile(tmp_file);
   end;
+  {terminate}
 End;
 """
         )
@@ -255,7 +258,6 @@ DEFAULT_RUN_TIMEOUT = 60.0
 
 
 def _register_run(parser: argparse.ArgumentParser):
-    parser.add_argument("--procedure", help="Procedure to call in AD", dest="procedure")
     parser.add_argument(
         "--altium-version", help="Uses specific version of AD", dest="AD_version"
     )
@@ -266,6 +268,37 @@ def _register_run(parser: argparse.ArgumentParser):
         default=DEFAULT_RUN_TIMEOUT,
     )
     parser.add_argument(
+        "--terminate",
+        help="Terminate AD after script execution",
+        action="store_true",
+        dest="terminate",
+    )
+
+    subparsers = parser.add_subparsers(dest="run_cmd")
+
+    sp = subparsers.add_parser("procedure")
+    sp.add_argument(
+        "procedure",
+        help="Procedure to call in AD or a DelphiScript code snippet",
+        metavar="procedure_or_code",
+    )
+    sp.add_argument(
+        "file",
+        type=pl.Path,
+        nargs=argparse.ZERO_OR_MORE,
+        help="Files to run in Altium Designer. Available in `passed_files` as a comma-separated list",
+    )
+
+    sp = subparsers.add_parser("outjob")
+    sp.add_argument(
+        "project_path", help="Project containing an OutJob file", type=pl.Path
+    )
+    sp.add_argument(
+        "outjob_name",
+        help="OutJob file name to use. If not set, first OutJob found in project will be used",
+        nargs=argparse.OPTIONAL,
+    )
+    sp.add_argument(
         "file",
         type=pl.Path,
         nargs=argparse.ZERO_OR_MORE,
@@ -278,66 +311,84 @@ def file_exists(f: pl.Path) -> pl.Path:
 
 
 def _handle_run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
-    if args.procedure or len(args.file) > 0:
+    altium = get_altium_path(args.AD_version)
+    if args.run_cmd == "procedure":
+        if not (args.procedure or len(args.file) > 0):
+            parser.error(
+                "Provide a procedure name or files to pass to test_altiumate script"
+            )
         logger.info(f"Changed files: {args.file}")
         f_ext = {f.suffix for f in args.file}
         logger.debug(f"Modified extensions: {f_ext}")
 
-        altium = get_altium_path(args.AD_version)
-
         render_constants(
             passed_files=",".join(str(f.absolute()) for f in args.file),
             call_procedure=args.procedure or "test_altiumate",
+            terminate=args.terminate,
         )
+    elif args.run_cmd == "outjob":
+        if not file_exists(args.project_path):
+            parser.error("Project file not found")
+        if args.outjob_name:
+            to_run = f"outjob_run_all('{args.project_path.absolute()}', '{args.outjob_name}')"
+        else:
+            to_run = f"outjob_run_all('{args.project_path.absolute()}')"
 
-        cmd = f"{altium} -RScriptingSystem:RunScript(ProjectName={(altiumate_dir / "AD_scripting" / 'precommit.PrjScr').absolute()}|ProcName=altiumate.pas>RunFromAltiumate)"
-
-        try:
-            max_run_time = float(args.timeout)
-        except Exception:
-            logger.error(
-                f"Invalid timeout value '{args.timeout}', using default {human_time(DEFAULT_RUN_TIMEOUT)} "
-            )
-            max_run_time = DEFAULT_RUN_TIMEOUT
-        assert max_run_time > 3, "Timeout must be larger than 3 seconds"
-        assert max_run_time < 3600, "Timeout must be less than 1 hour"
-
-        proc_start = time.time()
-        proc: subprocess.CompletedProcess = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=max_run_time,
+        render_constants(
+            passed_files=",".join(str(f.absolute()) for f in args.file),
+            call_procedure=to_run,
+            terminate=args.terminate,
         )
-        # if AD is already opened, the subprocess returns before the script has finished executing
-        # solution is creating a file containing exit code from inside AD and waiting for it to appear in altiumate
-
-        timeout = False
-        while not (
-            (  # file is created after ReWrite command in AD, wait a little to write to the file and close it
-                AD_return_file.exists()
-                and (time.time() - os.path.getmtime(AD_return_file)) > 0.1
-            )
-            or timeout
-        ):
-            timeout = (time.time() - proc_start) > max_run_time
-            time.sleep(0.3)
-        if timeout:
-            raise TimeoutError("AD took too long!")
-        logger.info(f"Task took {human_time(time.time() - proc_start)}")
-
-        with open(AD_return_file) as fp:
-            code = fp.readline()
-            try:
-                int(code)
-            except Exception:
-                logger.error(f"Invalid return code: {code}")
-                return 1
-            return int(code)
     else:
-        parser.error(
-            "Provide a procedure name or files to pass to test_altiumate script"
+        parser.error("Provide a command to run")
+
+    cmd = f"{altium} -RScriptingSystem:RunScript(ProjectName={(altiumate_dir / "AD_scripting" / 'precommit.PrjScr').absolute()}|ProcName=altiumate.pas>RunFromAltiumate)"
+
+    try:
+        max_run_time = float(args.timeout)
+    except Exception:
+        logger.error(
+            f"Invalid timeout value '{args.timeout}', using default {human_time(DEFAULT_RUN_TIMEOUT)} "
         )
+        max_run_time = DEFAULT_RUN_TIMEOUT
+    assert max_run_time > 3, "Timeout must be larger than 3 seconds"
+    assert max_run_time < 3600, "Timeout must be less than 1 hour"
+
+    proc_start = time.time()
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        shell=False,  # More secure
+    )
+    # if AD is already opened, the subprocess returns before the script has finished executing
+    # solution is creating a file containing exit code from inside AD and waiting for it to appear in altiumate
+
+    timeout = False
+    while not (
+        (  # file is created after ReWrite command in AD, wait a little to write to the file and close it
+            AD_return_file.exists()
+            and (time.time() - os.path.getmtime(AD_return_file)) > 0.1
+        )
+        or timeout
+    ):
+        timeout = (time.time() - proc_start) > max_run_time
+        time.sleep(0.3)
+    if timeout:
+        raise TimeoutError(
+            "AD took too long! Try setting a higher timeout with --timeout option"
+        )
+    logger.info(f"Task took {human_time(time.time() - proc_start)}")
+
+    with open(AD_return_file) as fp:
+        code = fp.readline()
+        try:
+            int(code)
+        except Exception:
+            logger.error(f"Invalid return code: {code}")
+            return 1
+        return int(code)
 
 
 def parse_prjpcb_params(

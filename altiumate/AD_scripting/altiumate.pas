@@ -2,7 +2,7 @@ const
   passed_files = '';
 
 Var
-  return_code: cardinal;
+  return_code: integer;
 
 Procedure RunFromAltiumate;
 Var
@@ -12,10 +12,10 @@ Begin
   AssignFile(tmp_file, 'C:/Git/altiumate/altiumate/AD_out');
   Try
     test_altiumate;
-    return_code := 0;
-  finally
+  Finally
     ReWrite(tmp_file);
     WriteLn(tmp_file, return_code);
     CloseFile(tmp_file);
   end;
+
 End;
