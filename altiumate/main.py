@@ -11,6 +11,8 @@ from collections.abc import Sequence
 
 from humanize import naturaldelta as human_time
 
+from altiumate.config import sample_config_yaml
+
 altiumate_dir = pl.Path(__file__).parent
 AD_return_file = altiumate_dir / "AD_out"
 
@@ -123,24 +125,6 @@ def get_altium_path(
         return installs[ver]
 
 
-def sample_config() -> str:
-    """Returns a sample pre-commit configuration file for an Altium Designer PCB project."""
-    return """fail_fast: true
-default_language_version:
-    python: python3.12
-repos:
-  - repo: https://github.com/TMALFSSISAWBOJBUMA/altiumate
-    rev: v0.2.0
-    hooks:
-      - id: find-altium
-        args: [--version, 24.9.1]
-      - id: altium-run
-        args: [procedure, "test_altiumate"]
-      - id: update-readme
-      
-"""
-
-
 def render_constants(**params: str):
     """Renders the altiumate.pas file with the provided parameters.
 
@@ -184,8 +168,10 @@ def _register_pre_commit(parser: argparse.ArgumentParser):
     ex_group: argparse._MutuallyExclusiveGroup = parser.add_mutually_exclusive_group()
     ex_group.add_argument(
         "--sample-config",
-        help="Prints the contents of a sample pre-commit configuration file",
-        action="store_true",
+        help="Prints the contents of a sample pre-commit configuration file. Defaults to remote (using github link) config. Local config requires altiumate being in PATH",
+        choices=["remote", "local"],
+        const="remote",
+        nargs=argparse.OPTIONAL,
         dest="print_config",
     )
     ex_group.add_argument(
@@ -217,7 +203,8 @@ def _register_pre_commit(parser: argparse.ArgumentParser):
 
 def _handle_pre_commit(args: argparse.Namespace, parser: argparse.ArgumentParser):
     if args.print_config:
-        print(sample_config())
+        logger.info(f"Printing {args.print_config} config")
+        print(sample_config_yaml(args.print_config))
         return 0
     elif args.add_config_file or args.add_linked_config:
         dir_to_add: pl.Path = args.add_config_file or args.add_linked_config
@@ -231,12 +218,12 @@ def _handle_pre_commit(args: argparse.Namespace, parser: argparse.ArgumentParser
 
         if args.add_config_file:
             with open(args.add_config_file / ".pre-commit-config.yaml", "w") as f:
-                f.write(sample_config())
+                f.write(sample_config_yaml("remote"))
         else:
             conf = altiumate_dir / ".linked-config.yaml"
             if not conf.exists():
                 with open(conf, "w") as f:
-                    f.write(sample_config())
+                    f.write(sample_config_yaml("local"))
             out.unlink(True)
             return out.hardlink_to(conf)
 

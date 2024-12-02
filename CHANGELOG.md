@@ -1,3 +1,7 @@
+# v0.2.1
+
+- updated pre-commit config generation
+
 # v0.2.0
 
 - fixed bugs with execution and improved error handling
