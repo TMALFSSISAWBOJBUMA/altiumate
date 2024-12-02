@@ -208,27 +208,34 @@ def _handle_pre_commit(args: argparse.Namespace, parser: argparse.ArgumentParser
         return 0
     elif args.add_config_file or args.add_linked_config:
         dir_to_add: pl.Path = args.add_config_file or args.add_linked_config
-        out = dir_to_add / ".pre-commit-config.yaml"
-        if not dir_to_add.is_dir():  # TODO: add option to append to existing config
+
+        if not dir_to_add.is_dir():
             return logger.error(f"Provided path {dir_to_add} is not a directory")
+        out = dir_to_add / ".pre-commit-config.yaml"
         if out.exists() and not args.force:
             return logger.error(
                 f"Config file {out} already exists. Use --force to overwrite"
             )
 
         if args.add_config_file:
+            logger.info(f"Creating pre-commit config file in {dir_to_add}")
             with open(args.add_config_file / ".pre-commit-config.yaml", "w") as f:
                 f.write(sample_config_yaml("remote"))
         else:
             conf = altiumate_dir / ".linked-config.yaml"
             if not conf.exists():
+                logger.info(
+                    f"Creating config file for linking in {altiumate_dir}. All linked configs will point to this file"
+                )
                 with open(conf, "w") as f:
                     f.write(sample_config_yaml("local"))
             out.unlink(True)
+            logger.info(f"Creating hard link to {conf} in {dir_to_add}")
             return out.hardlink_to(conf)
 
         return logger.info(f"Pre-commit config file created in {dir}")
     elif args.install:
+        logger.info("Running 'pre-commit install' command")
         proc: subprocess.CompletedProcess = subprocess.run(
             "pre-commit install",
             capture_output=True,
