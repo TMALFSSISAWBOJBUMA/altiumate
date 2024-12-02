@@ -2,3 +2,6 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 build/
+*.log
+*.lock
+.vscode/
