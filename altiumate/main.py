@@ -9,6 +9,7 @@ import time
 import winreg as wr
 from collections.abc import Sequence
 
+import psutil
 from humanize import naturaldelta as human_time
 
 from altiumate.config import sample_config_yaml
@@ -80,12 +81,26 @@ def read_altium_path():
     return pl.Path(altium_exe)
 
 
+def find_altium_process() -> pl.Path | None:
+    """Finds the X2.exe process in the process list.
+
+    Returns:
+        pl.Path|None: Path to Altium Designer executable if found, else None
+    """
+    for p in psutil.process_iter(["name", "exe"]):
+        if "x2.exe" == p.name().lower():
+            return pl.Path(p.exe())
+    return None
+
+
 def get_altium_path(
     version: str | None = None,
 ):  # TODO: maybe add 'latest' as an option
-    """Returns the path to Altium Designer executable from Windows registry.    
+    """Returns the path to Altium Designer executable.
+
     If version is specified, executable will be selected using string matching, else \
-        the first instance found will be returned. 'any' can be used as a version placehoder.
+        the already opened or the first instance found in Windows registry will be returned.\
+        'any' can be used as a version placehoder.
 
     Raises:
         FileNotFoundError: If the registry key or specified version of AD is missing
@@ -94,9 +109,15 @@ def get_altium_path(
     Returns:
         pl.Path: Path to Altium Designer executable
     """
-    fail = FileNotFoundError("Altium Designer is not installed on this computer")
     if version == "any":
         version = None
+
+    if version is None:
+        path = find_altium_process()
+        if path:
+            return path
+
+    fail = FileNotFoundError("Altium Designer is not installed on this computer")
     installs = {}
     try:
         with wr.OpenKey(wr.HKEY_LOCAL_MACHINE, "SOFTWARE\\Altium\\Builds") as key:
@@ -118,7 +139,7 @@ def get_altium_path(
             raise FileNotFoundError(f"Version '{version}' not found")
         elif len(filtered) > 1:
             raise FileNotFoundError(
-                f"Multiple versions found for '{version}': {filtered}"
+                f"Multiple versions found for '{version}': {filtered}. Provide more specific version"
             )
         return installs[filtered[0]]
     for ver in installs:
@@ -253,7 +274,10 @@ DEFAULT_RUN_TIMEOUT = 60.0
 
 def _register_run(parser: argparse.ArgumentParser):
     parser.add_argument(
-        "--altium-version", help="Uses specific version of AD", dest="AD_version"
+        "--altium-version",
+        help="Uses specific version of AD",
+        dest="AD_version",
+        type=str,
     )
     parser.add_argument(
         "--timeout",
@@ -521,6 +545,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         dest="altium_path",
         metavar="version",
         nargs=argparse.OPTIONAL,
+        type=str,
         const="any",
     )
     subparsers = parser.add_subparsers(dest="cmd")
