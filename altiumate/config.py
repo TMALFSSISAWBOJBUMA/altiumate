@@ -2,7 +2,7 @@ import re
 
 import yaml
 
-ALTIUMATE_VERSION = "v0.2.1"
+ALTIUMATE_VERSION = "v0.2.2"
 
 _hooks = [
     {

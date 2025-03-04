@@ -1,3 +1,6 @@
+# v0.2.2
+- fixed encoding issues
+- fixed project parameters parsing
 # v0.2.1
 
 - updated pre-commit config generation

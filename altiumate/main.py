@@ -14,6 +14,15 @@ from humanize import naturaldelta as human_time
 
 from altiumate.config import sample_config_yaml
 
+
+def eopen(
+    file: str,
+    mode: str = "r",
+    errors: str | None = None,
+):
+    return open(file, mode, encoding="utf_8", errors=errors)
+
+
 altiumate_dir = pl.Path(__file__).parent
 AD_return_file = altiumate_dir / "AD_out"
 
@@ -74,7 +83,7 @@ def read_altium_path():
         pl.Path: path to AD executable read from file
     """
     try:
-        with open(altiumate_dir / ".altium_exe") as f:
+        with eopen(altiumate_dir / ".altium_exe") as f:
             altium_exe = f.read().strip()
     except FileNotFoundError:
         raise FileNotFoundError("AD path file missing!")
@@ -157,7 +166,7 @@ def render_constants(**params: str):
     terminate = (
         params.pop("terminate", False) and "TerminateWithExitCode(return_code);" or ""
     )
-    with open(altiumate_dir / "AD_scripting" / "altiumate.pas", "w") as f_dst:
+    with eopen(altiumate_dir / "AD_scripting" / "altiumate.pas", "w") as f_dst:
         data = "\n".join(f"  {k} = '{v}';" for k, v in params.items())
         f_dst.write(
             f"""const
@@ -240,7 +249,7 @@ def _handle_pre_commit(args: argparse.Namespace, parser: argparse.ArgumentParser
 
         if args.add_config_file:
             logger.info(f"Creating pre-commit config file in {dir_to_add}")
-            with open(args.add_config_file / ".pre-commit-config.yaml", "w") as f:
+            with eopen(args.add_config_file / ".pre-commit-config.yaml", "w") as f:
                 f.write(sample_config_yaml("remote"))
         else:
             conf = altiumate_dir / ".linked-config.yaml"
@@ -248,7 +257,7 @@ def _handle_pre_commit(args: argparse.Namespace, parser: argparse.ArgumentParser
                 logger.info(
                     f"Creating config file for linking in {altiumate_dir}. All linked configs will point to this file"
                 )
-                with open(conf, "w") as f:
+                with eopen(conf, "w") as f:
                     f.write(sample_config_yaml("local"))
             out.unlink(True)
             logger.info(f"Creating hard link to {conf} in {dir_to_add}")
@@ -399,7 +408,7 @@ def _handle_run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> in
         )
     logger.info(f"Task took {human_time(time.time() - proc_start)}")
 
-    with open(AD_return_file) as fp:
+    with eopen(AD_return_file) as fp:
         code = fp.readline()
         try:
             int(code)
@@ -423,13 +432,14 @@ def parse_prjpcb_params(
     # reading = None
     # store = {}
     out = {}
-    with open(prjpcb) as f:
+    with eopen(prjpcb) as f:
 
         def f_iter(f):
             for line in f:
                 yield line.splitlines()[0]
 
         f_i = f_iter(f)
+        check = re.compile(r"\[Parameter[0-9]")
         for line in f_i:
             # if reading is None:
             #     if '[' and line.endswith(']'):
@@ -445,7 +455,7 @@ def parse_prjpcb_params(
             #     if reading == 'Design':
             #         out.update([line.split('=', 1)])
 
-            if "[Parameter" in line:  # Check for parameter section
+            if check.match(line):  # Check for parameter section
                 name = next(f_i).split("=", 1)[1]
                 out[name] = next(f_i).split("=", 1)[1]
     logger.debug(f"Parameters: {out}")
@@ -472,7 +482,7 @@ def update_readme(
 
     """
     inserted = 0
-    with open(readme) as f:
+    with eopen(readme) as f:
         data = f.read()
         insert_pattern = r"\[\]\((.*?)\)(.*?)\[\]\(/\)"
 
@@ -488,7 +498,7 @@ def update_readme(
             return f"[]({key}){parameters[key]}[](/)"
 
         data = re.sub(insert_pattern, replacer, data)
-    with open(readme, "w") as f:
+    with eopen(readme, "w") as f:
         f.write(data)
     logger.info(f"Updated {readme} with {inserted} parameters")
     return 0
