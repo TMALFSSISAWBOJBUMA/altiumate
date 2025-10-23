@@ -42,3 +42,8 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.package-data]
 "altiumate.AD_scripting" = ["*.pas", "*.PrjScr"]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.3.0",
+]
