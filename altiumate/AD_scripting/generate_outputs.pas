@@ -34,27 +34,7 @@ Var
   project: IProject;
 Begin
 
-  // open project from path
-  ResetParameters;
-  AddStringParameter('ObjectKind', 'Project');
-  AddStringParameter('FileName', project_path);
-  RunProcess('WorkspaceManager:OpenObject');
-
-  // workspace methods that don't work:
-  // project := GetWorkspace.DM_GetProjectFromDocumentPath(project_path);
-  // project := GetProjectByDocumentPath(project_path);
-
-  // try matching project from the ones opened in the workspace
-  for n := 0 to GetWorkspace.DM_ProjectCount - 1 do
-  begin
-    project := GetWorkspace.DM_Projects(n);
-    if project = nil then
-      Break;
-
-    if AnsiCompareFileName(project_path, project.DM_ProjectFullPath, false) = 0
-    then
-      Break;
-  end;
+  project := get_project(project_path);
 
   if check_val(project, nil, 'Failed to open the project') then
     exit;
