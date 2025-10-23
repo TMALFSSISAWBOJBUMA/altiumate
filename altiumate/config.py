@@ -2,7 +2,7 @@ import re
 
 import yaml
 
-ALTIUMATE_VERSION = "v0.2.2"
+ALTIUMATE_VERSION = "v0.3.0"
 
 _hooks = [
     {
@@ -33,6 +33,16 @@ _hooks = [
         "files": r"\.(PrjPcb|md)$",
         "pass_filenames": False,
         "description": "Updates the README.md file with requested project parameters",
+        "language": "system",
+    },
+    {
+        "id": "check-unsaved",
+        "args": [],
+        "name": "Force file saving before commit",
+        "entry": "altiumate run unsaved-check",
+        "description": "Ensures there are no unsaved changes in Altium Designer before committing",
+        "pass_filenames": False,
+        "always_run": True,
         "language": "system",
     },
 ]
@@ -100,11 +110,5 @@ def get_hooks_yaml():
 
 
 if __name__ == "__main__":
-    for _type in ("remote", "local"):
-        print("-" * 80)
-        print(f"sample_config({_type}):")
-        print(sample_config_yaml(_type))
-
-    print("-" * 80)
-    print("get_hooks_yaml:")
-    print(get_hooks_yaml())
+    with open(".pre-commit-hooks.yaml", "w") as f:
+        f.write(get_hooks_yaml())

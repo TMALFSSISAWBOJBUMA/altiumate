@@ -73,6 +73,10 @@ def get_subparser(
     return parser._subparsers._group_actions[0]._name_parser_map[name]
 
 
+def subparsers_names(parser: argparse.ArgumentParser) -> list[str]:
+    return list(parser._subparsers._group_actions[0]._name_parser_map.keys())
+
+
 def read_altium_path():
     """Reads the path to Altium Designer executable from .altium_exe file.
 
@@ -155,24 +159,37 @@ def get_altium_path(
         return installs[ver]
 
 
-def render_constants(**params: str):
+def add_project_path(parser: argparse.ArgumentParser):
+    parser.add_argument(
+        "project_path",
+        help="Altium project file to use, defaults to first found in cwd",
+        type=pl.Path,
+        default=next(pl.Path.cwd().glob("*.PrjPcb"), None),
+        nargs=argparse.OPTIONAL,
+    )
+
+
+def render_constants(
+    call_procedure: str = "test_altiumate", terminate: bool = False, **params: str
+):
     """Renders the altiumate.pas file with the provided parameters.
 
-    params: dict[str, str]: Parameters to render in the altiumate.pas file as constants.
-    └─> call_procedure: str: Internals of the function that will be called. ';' is appended after this text. Defaults to "test_altiumate"
+    call_procedure: str: Internals of the function that will be called. ';' is appended after this text if needed. Defaults to "test_altiumate"
+    terminate: bool: Whether to terminate AD after script execution. Defaults to False
+    params: dict[str, str]: Parameters to render in the altiumate.pas file as constants
     """
     AD_return_file.unlink(True)
-    procedure = params.pop("call_procedure", "test_altiumate")
-    terminate = (
-        params.pop("terminate", False) and "TerminateWithExitCode(return_code);" or ""
-    )
+    if call_procedure[-1] != ";":
+        call_procedure += ";"
     with eopen(altiumate_dir / "AD_scripting" / "altiumate.pas", "w") as f_dst:
-        data = "\n".join(f"  {k} = '{v}';" for k, v in params.items())
-        f_dst.write(
-            f"""const
-{data}
+        header = (
+            f"Const\n{'\n'.join(f"  {k} = '{v}';" for k, v in params.items())}\n"
+            if params
+            else ""
+        )
 
-Var
+        f_dst.write(
+            f"""{header}Var
   return_code: integer;
 
 Procedure RunFromAltiumate;
@@ -182,13 +199,13 @@ Begin
   return_code := 1;
   AssignFile(tmp_file, '{AD_return_file.as_posix()}');
   Try
-    {procedure};
+    {call_procedure}
   Finally
     ReWrite(tmp_file);
     WriteLn(tmp_file, return_code);
     CloseFile(tmp_file);
   end;
-  {terminate}
+  {"TerminateWithExitCode(return_code);" if terminate else ""}
 End;
 """
         )
@@ -303,7 +320,9 @@ def _register_run(parser: argparse.ArgumentParser):
 
     subparsers = parser.add_subparsers(dest="run_cmd")
 
-    sp = subparsers.add_parser("procedure")
+    sp = subparsers.add_parser(
+        "procedure", help="Runs arbitrary code in AD Scripting System"
+    )
     sp.add_argument(
         "procedure",
         help="Procedure to call in AD or a DelphiScript code snippet",
@@ -316,21 +335,20 @@ def _register_run(parser: argparse.ArgumentParser):
         help="Files to run in Altium Designer. Available in `passed_files` as a comma-separated list",
     )
 
-    sp = subparsers.add_parser("outjob")
-    sp.add_argument(
-        "project_path", help="Project containing an OutJob file", type=pl.Path
+    sp = subparsers.add_parser(
+        "outjob", help="Runs an Output Job from a specified project"
     )
+    add_project_path(sp)
     sp.add_argument(
         "outjob_name",
         help="OutJob file name to use. If not set, first OutJob found in project will be used",
         nargs=argparse.OPTIONAL,
     )
-    sp.add_argument(
-        "file",
-        type=pl.Path,
-        nargs=argparse.ZERO_OR_MORE,
-        help="Files to run in Altium Designer. Available in `passed_files` as a comma-separated list",
+
+    sp = subparsers.add_parser(
+        "unsaved-check", help="Checks for unsaved (modified) files in the project"
     )
+    add_project_path(sp)
 
 
 def file_exists(f: pl.Path) -> pl.Path:
@@ -339,6 +357,10 @@ def file_exists(f: pl.Path) -> pl.Path:
 
 def _handle_run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     altium = get_altium_path(args.AD_version)
+    if args.run_cmd not in subparsers_names(parser):
+        parser.error("Provide a command to run")
+
+    parser = get_subparser(parser, args.run_cmd)
     if args.run_cmd == "procedure":
         if not (args.procedure or len(args.file) > 0):
             parser.error(
@@ -353,23 +375,33 @@ def _handle_run(args: argparse.Namespace, parser: argparse.ArgumentParser) -> in
             call_procedure=args.procedure or "test_altiumate",
             terminate=args.terminate,
         )
-    elif args.run_cmd == "outjob":
-        if not file_exists(args.project_path):
-            parser.error("Project file not found")
+    elif not file_exists(
+        args.project_path
+    ):  # project_path is required for other commands
+        parser.error("Project file not found")
+    if args.run_cmd == "outjob":
         if args.outjob_name:
             to_run = f"outjob_run_all('{args.project_path.absolute()}', '{args.outjob_name}')"
         else:
             to_run = f"outjob_run_all('{args.project_path.absolute()}')"
+        to_run += ";\nreturn_code := 0;"
 
         render_constants(
-            passed_files=",".join(str(f.absolute()) for f in args.file),
             call_procedure=to_run,
             terminate=args.terminate,
         )
-    else:
-        parser.error("Provide a command to run")
 
-    cmd = f"{altium} -RScriptingSystem:RunScript(ProjectName={(altiumate_dir / "AD_scripting" / 'precommit.PrjScr').absolute()}|ProcName=altiumate.pas>RunFromAltiumate)"
+    elif args.run_cmd == "unsaved-check":
+        if find_altium_process() is None:
+            logger.warning("AD is not running, all files are considered saved")
+            return 0
+
+        render_constants(
+            call_procedure=f"if modified_docs_in_project('{args.project_path.absolute()}')<>true then return_code := 0;",
+            terminate=args.terminate,
+        )
+
+    cmd = f"{altium} -RScriptingSystem:RunScript(ProjectName={(altiumate_dir / 'AD_scripting' / 'precommit.PrjScr').absolute()}|ProcName=altiumate.pas>RunFromAltiumate)"
 
     try:
         max_run_time = float(args.timeout)
@@ -505,13 +537,7 @@ def update_readme(
 
 
 def _register_readme(parser: argparse.ArgumentParser):
-    parser.add_argument(
-        "prjpcb",
-        help="Altium .PrjPcb file with parameters, defaults to first found in cwd",
-        type=pl.Path,
-        default=next(pl.Path.cwd().glob("*.PrjPcb"), None),
-        nargs=argparse.OPTIONAL,
-    )
+    add_project_path(parser)
     parser.add_argument(
         "readme_md",
         help="README.md to update, defaults to README.md in cwd",
@@ -522,11 +548,13 @@ def _register_readme(parser: argparse.ArgumentParser):
 
 
 def _handle_readme(args: argparse.Namespace, parser: argparse.ArgumentParser):
-    file_exists(args.prjpcb) or parser.error("No project file found. Add -h for help")
+    file_exists(args.project_path) or parser.error(
+        "No project file found. Add -h for help"
+    )
     file_exists(args.readme_md) or parser.error(
         "No README.md file found. Add -h for help"
     )
-    params = parse_prjpcb_params(args.prjpcb)
+    params = parse_prjpcb_params(args.project_path)
     return update_readme(args.readme_md, params)
 
 
@@ -599,7 +627,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception as e:
         logger.critical(str(e))
         logger.warning(
-            f'Check log file {(altiumate_dir / ".altiumate.log").absolute()} for more details'
+            f"Check log file {(altiumate_dir / '.altiumate.log').absolute()} for more details"
         )
         return 1
 

@@ -9,9 +9,9 @@ Interface for executing scripts in Altium Designer projects for automation
 Install the altiumate module using your package manager of choice:
 
 ```
-python -m pip install git+https://github.com/TMALFSSISAWBOJBUMA/altiumate.git@v0.2.2
+python -m pip install git+https://github.com/TMALFSSISAWBOJBUMA/altiumate.git@v0.3.0
 
-uv pip install git+https://github.com/TMALFSSISAWBOJBUMA/altiumate.git@v0.2.2
+uv pip install git+https://github.com/TMALFSSISAWBOJBUMA/altiumate.git@v0.3.0
 ```
 
 To use git hooks, install [pre-commit](https://pre-commit.com/#install).
@@ -33,12 +33,13 @@ To use altiumate in pre-commit config add the following to your config:
 
 ```
 -   repo: https://github.com/TMALFSSISAWBOJBUMA/altiumate
-    rev: v0.2.2
+    rev: v0.3.0
     hooks:
         -id: find-altium
         -id: altium-run
             args: [procedure, <your global procedure or code snippet to execute>]
         -id: update-readme
+        -id: check-unsaved
 ```
 
 or if you're starting a new config run `altiumate pre-commit add-config` or use `altiumate pre-commit --sample-config`.

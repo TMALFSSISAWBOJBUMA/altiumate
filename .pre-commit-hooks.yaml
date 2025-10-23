@@ -19,3 +19,10 @@
   pass_filenames: false
   description: Updates the README.md file with requested project parameters
   language: python
+- id: check-unsaved
+  name: Force file saving before commit
+  entry: altiumate run unsaved-check
+  description: Ensures there are no unsaved changes in Altium Designer before committing
+  pass_filenames: false
+  always_run: true
+  language: python

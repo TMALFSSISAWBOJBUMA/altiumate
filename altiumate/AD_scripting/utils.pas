@@ -63,7 +63,11 @@ End;
 
 procedure run_test;
 const
-  paf = 'C:\Git\Solarowy gitlab\HW\lstesc-controlpcb\ESC_Control.PrjPcb';
+  paf = 'C:\Git\LEDy\LEDy.PrjPcb';
+var
+  ret: bool;
 begin
-  outjob_run_all(paf);
+  // outjob_run_all(paf);
+  ret := modified_docs_in_project(paf);
+  ShowMessage(BooleanToStrings(ret));
 end;
