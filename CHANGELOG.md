@@ -1,3 +1,7 @@
+# v0.4.0
+
+- added `--version` command
+
 # v0.3.0
 
 - added `unsaved-check` to `run` command

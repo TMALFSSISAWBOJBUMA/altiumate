@@ -12,7 +12,7 @@ from collections.abc import Sequence
 import psutil
 from humanize import naturaldelta as human_time
 
-from altiumate.config import sample_config_yaml
+from altiumate.config import ALTIUMATE_VERSION, DEFAULT_RUN_TIMEOUT, sample_config_yaml
 
 
 def eopen(
@@ -295,9 +295,6 @@ def _handle_pre_commit(args: argparse.Namespace, parser: argparse.ArgumentParser
         return 1
 
 
-DEFAULT_RUN_TIMEOUT = 60.0
-
-
 def _register_run(parser: argparse.ArgumentParser):
     parser.add_argument(
         "--altium-version",
@@ -575,6 +572,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
     add_verbose(parser)
+    parser.add_argument(
+        "--version",
+        help="Prints Altiumate version",
+        dest="altiumate_version",
+        action="store_true",
+    )
+
     ad_grp = parser.add_argument_group("AD executable")
     ad_grp.add_argument(
         "--altium-path",
@@ -609,7 +613,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         o_log.setLevel(logging.INFO)
 
     try:
-        if args.altium_path:
+        if args.altiumate_version:
+            print(ALTIUMATE_VERSION)
+            return 0
+        elif args.altium_path:
             print(get_altium_path(args.altium_path))
             return 0
         elif args.cmd in entries:
