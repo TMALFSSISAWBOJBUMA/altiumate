@@ -337,7 +337,9 @@ def _register_run(parser: argparse.ArgumentParser):
     )
     add_project_path(sp)
     sp.add_argument(
-        "outjob_name",
+        "-name",
+        dest="outjob_name",
+        metavar="outjob_name",
         help="OutJob file name to use. If not set, first OutJob found in project will be used",
         nargs=argparse.OPTIONAL,
     )

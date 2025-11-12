@@ -1,3 +1,5 @@
+# v0.4.1
+- `outjob_name` changed to `-name` to allow project auto detection while setting outjob name
 # v0.4.0
 
 - added `--version` command

@@ -2,7 +2,7 @@ import re
 
 import yaml
 
-ALTIUMATE_VERSION = "v0.4.0"
+ALTIUMATE_VERSION = "v0.4.1"
 DEFAULT_RUN_TIMEOUT = 60.0
 
 _hooks = [
